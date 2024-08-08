@@ -586,6 +586,8 @@ class SimulateImageHalo(SimulateBase):
         super().__init__(cparser)
         if not os.path.isdir(self.img_dir):
             os.makedirs(self.img_dir, exist_ok=True)
+        self.image_list = []
+        self.sim_data_list = []
         return
 
     def run(self, ifield, src_halo):
@@ -640,6 +642,7 @@ class SimulateImageHalo(SimulateBase):
                 survey_name=self.survey_name,
                 **kargs,
             )
+            self.sim_data_list.append(sim_data)
             # write galaxy images
             for band_name in self.sim_band_list:
                 gal_fname = "%s/image-%05d_nfw-%03d_rot%d_%s.fits" % (
