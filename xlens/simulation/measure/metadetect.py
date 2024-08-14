@@ -8,6 +8,7 @@ from numpy.typing import NDArray
 import ngmix
 import anacal
 import fitsio
+from metadetect import do_metadetect
 
 from ..simulator.base import SimulateBase
 from ..simulator.loader import MakeDMExposure
@@ -48,6 +49,14 @@ def parse_metadetect_config(cparser):
         "detect": {
             "thresh": cparser["metadetect"].getfloat("detect.thresh"),
         },
+        "meds":{
+            "box_padding": cparser["metadetect"].getint("meds.box_padding"),
+            "box_type": cparser["metadetect"].get("meds.box_type"),
+            "max_box_size": cparser["metadetect"].getint("meds.max_box_size"),
+            "min_box_size": cparser["metadetect"].getint("meds.min_box_size"),
+            "rad_fac": cparser["metadetect"].getfloat("meds.rad_fac"),
+            "rad_min": cparser["metadetect"].getfloat("meds.rad_min"),
+        }
     }
 
     return config_dict
@@ -210,18 +219,29 @@ class ProcessSimMetadetect(SimulateBase):
         }
 
 
-def process_image(
-    self,
-    gal_array: NDArray,
-    psf_array: NDArray,
-    cov_matrix: anacal.fpfs.table.Covariance,
-    pixel_scale: float,
-    noise_array: NDArray | None,
-    # psf_obj: anacal.fpfs.BasePsf | None,
-    mask_array: NDArray,
-    star_cat: NDArray,
-):
+    def process_image(
+        self,
+        gal_array: NDArray,
+        psf_array: NDArray,
+        # cov_matrix: anacal.fpfs.table.Covariance,
+        pixel_scale: float,
+        noise_variance: float,
+        noise_array: NDArray | None,
+        # psf_obj: anacal.fpfs.BasePsf | None,
+        # mask_array: NDArray,
+        # star_cat: NDArray,
+    ):
 
-    obs = make_ngmix_obs(gal_array, psf_array, noise_array, pixel_scale)
-    
-    
+        obs = make_ngmix_obs(gal_array, psf_array, noise_array, pixel_scale)
+        
+        obs.mfrac = np.zeros_like(obs.image)
+        
+        mbobs = ngmix.MultiBandObsList()
+        obslist = ngmix.ObsList()
+        obslist.append(obs)
+        mbobs.append(obslist)
+
+        #TODO: need to think about the seed structure
+        mdet_res = do_metadetect(self.metadetect_config, mbobs, np.random.RandomState(10))
+        
+        
