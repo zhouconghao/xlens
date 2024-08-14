@@ -49,6 +49,7 @@ def parse_metadetect_config(cparser):
         "detect": {
             "thresh": cparser["metadetect"].getfloat("detect.thresh"),
         },
+        # TODO: need to check if the meds parameters are correct
         "meds":{
             "box_padding": cparser["metadetect"].getint("meds.box_padding"),
             "box_type": cparser["metadetect"].get("meds.box_type"),
@@ -101,6 +102,8 @@ def make_ngmix_obs(gal_array, psf_array, noise_array, pixel_scale, noise_std=0.3
         weight=wt,
         jacobian=jacobian,
         psf=psf_obs,
+        bmask=np.zeros_like(noise_array, dtype=np.int32),
+        ormask=np.zeros_like(noise_array, dtype=np.int32),
     )
     return obs
 
@@ -243,5 +246,4 @@ class ProcessSimMetadetect(SimulateBase):
 
         #TODO: need to think about the seed structure
         mdet_res = do_metadetect(self.metadetect_config, mbobs, np.random.RandomState(10))
-        
         
