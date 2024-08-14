@@ -11,7 +11,7 @@ import fitsio
 
 from ..simulator.base import SimulateBase
 from ..simulator.loader import MakeDMExposure
-from .utils import get_psf_array
+from .utils import get_psf_array, get_gridpsf_obj
 
 
 def rotate90(image):
@@ -53,7 +53,7 @@ def parse_metadetect_config(cparser):
     return config_dict
 
 
-def make_ngmix_obs(gal_array, psf_array, noise_array, pixel_scale):
+def make_ngmix_obs(gal_array, psf_array, noise_array, pixel_scale, noise_std=0.37):
     """Transforms to Ngmix data
 
     Parameters:
@@ -74,7 +74,8 @@ def make_ngmix_obs(gal_array, psf_array, noise_array, pixel_scale):
         scale=pixel_scale,
     )
 
-    gal_noise = 1e-10
+    gal_noise = noise_std
+    noise_im = np.random.normal(size=gal_array.shape, scale=gal_noise)
     psf_noise = 1e-10
     wt = np.ones_like(gal_array) / gal_noise**2.0
     psf_wt = np.ones_like(psf_array) / psf_noise**2.0
@@ -84,8 +85,10 @@ def make_ngmix_obs(gal_array, psf_array, noise_array, pixel_scale):
         weight=psf_wt,
         jacobian=psf_jacobian,
     )
+    #TODO: need to double check noise and noise image here is used correctly
     obs = ngmix.Observation(
-        gal_array,
+        gal_array + noise_array,
+        noise=noise_im,
         weight=wt,
         jacobian=jacobian,
         psf=psf_obs,
@@ -113,9 +116,6 @@ class ProcessSimMetadetect(SimulateBase):
         self.ngrid = 2 * 32
         self.psf_rcut = 26
 
-        
-        
-
     def prepare_data(self, file_name):
 
         dm_task = MakeDMExposure(self.config_name)
@@ -126,6 +126,13 @@ class ProcessSimMetadetect(SimulateBase):
         mag_zero = (
             np.log10(exposure.getPhotoCalib().getInstFluxAtZeroMagnitude())
             / 0.4
+        )
+        
+        psf_obj = get_gridpsf_obj(
+            exposure,
+            ngrid=self.ngrid,
+            psf_rcut=self.psf_rcut,
+            dg=250,
         )
 
         psf_array = get_psf_array(
@@ -149,9 +156,11 @@ class ProcessSimMetadetect(SimulateBase):
         ny = self.coadd_dim + 10
         nx = self.coadd_dim + 10
         noise_std = np.sqrt(variance)
-
+        
+        # if noise is high enough     
         if variance > 1e-8:
             if self.corr_fname is None:
+                # if no correlation file is provided, generate noise
                 noise_array = (
                     np.random.RandomState(seed)
                     .normal(
@@ -176,9 +185,8 @@ class ProcessSimMetadetect(SimulateBase):
         else:
             noise_array = None
 
-        # TODO: not sure if we need these for metadetect
+        # TODO: not sure if we need the covariance matrix for metadetect
         # so leaving them as None for now
-        psf_obj = None
         cov_matrix = None
 
         if self.input_star_dir is not None:
@@ -215,4 +223,5 @@ def process_image(
 ):
 
     obs = make_ngmix_obs(gal_array, psf_array, noise_array, pixel_scale)
+    
     
