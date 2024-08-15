@@ -95,7 +95,7 @@ def make_ngmix_obs(gal_array, psf_array, noise_array, pixel_scale, noise_std=0.3
         weight=psf_wt,
         jacobian=psf_jacobian,
     )
-    #TODO: need to double check noise and noise image here is used correctly
+    
     obs = ngmix.Observation(
         gal_array + noise_array,
         noise=noise_im,
