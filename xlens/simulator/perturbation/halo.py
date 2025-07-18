@@ -134,7 +134,8 @@ class ShearHalo(object):
             mu = 1.0 / ((1 - kappa) ** 2 - gamma1**2 - gamma2**2)
 
             if g1**2.0 + g2**2.0 > 0.95:
-                return _get_shear_res_dict(gso, shift, gamma1, gamma2, kappa)
+                raise ValueError("Shear is too high to be simulated.")
+                # return _get_shear_res_dict(gso, shift, gamma1, gamma2, kappa)
 
             gso = gso.lens(g1=g1, g2=g2, mu=mu)
 
