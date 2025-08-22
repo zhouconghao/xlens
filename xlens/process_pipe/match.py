@@ -207,13 +207,15 @@ class matchPipe(PipelineTask):
         return
 
     @staticmethod
-    def match(ana_coords, mrc_coords, thres=6):
+    def match(ana_coords, mrc_coords, thres=6, return_dist=False):
         mrc_tree = KDTree(mrc_coords)
         match_dist, match_ndx = mrc_tree.query(ana_coords)
         # Filter on distance
         mask = match_dist < thres
         ana_idx = np.flatnonzero(mask)
         mrc_idx = match_ndx[mask]
+        if return_dist:
+            d_keep = match_dist[mask]
 
         # Count how many times each mrc is matched
         uids, mrc_counts = np.unique(mrc_idx, return_counts=True)
@@ -224,6 +226,8 @@ class matchPipe(PipelineTask):
             is_unique = np.array([m not in repeated_mrc for m in mrc_idx])
             uniq_ana_idx = ana_idx[is_unique]
             uniq_mrc_idx = mrc_idx[is_unique]
+            if return_dist:
+                uniq_dist = d_keep[is_unique]
 
             # Get remaining unmatched indices
             all_ana = set(range(len(ana_coords)))
@@ -251,14 +255,24 @@ class matchPipe(PipelineTask):
                 # Recover original indices
                 ana_idx2 = remain_ana[np.flatnonzero(finite_rows)[row[valid]]]
                 mrc_idx2 = remain_mrc[np.flatnonzero(finite_cols)[col[valid]]]
+                if return_dist:
+                    dist2 = sub_dist[row[valid], col[valid]]
             else:
                 ana_idx2 = np.array([], dtype=int)
                 mrc_idx2 = np.array([], dtype=int)
+                dist2 = np.array([], dtype=float) # low cost initialization
             final_ana_idx = np.concatenate([uniq_ana_idx, ana_idx2])
             final_mrc_idx = np.concatenate([uniq_mrc_idx, mrc_idx2])
-            return final_ana_idx, final_mrc_idx
-        else:
-            return ana_idx, mrc_idx
+            if return_dist:
+                final_dist = np.concatenate([uniq_dist, dist2])
+                return final_ana_idx, final_mrc_idx, final_dist
+            else:
+                return final_ana_idx, final_mrc_idx
+        else: # if no repeated match
+            if return_dist:
+                return ana_idx, mrc_idx, match_dist
+            else:
+                return ana_idx, mrc_idx
 
     def merge_dm(self, src: np.ndarray, mrc: np.ndarray, pixel_scale=0.168):
         assert isinstance(self.config, matchPipeConfig)
