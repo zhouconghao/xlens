@@ -101,7 +101,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument(
         "--emax",
         type=float,
-        default=0.3,
+        default=0.5,
         help="Ellipticity magnitude cut upper bound.",
     )
     parser.add_argument(
