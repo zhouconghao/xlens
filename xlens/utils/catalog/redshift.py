@@ -26,8 +26,8 @@ import numpy as np
 from scipy.integrate import simpson
 from scipy.optimize import minimize_scalar
 
-from ..utils.bands import physical_band, survey_of
-from ..utils.constants import MAG_ZERO_AB
+from ..bands import physical_band, survey_of
+from ..constants import MAG_ZERO_AB
 from .utils import _resolve_cut_name, flux_to_mag
 
 NUM_Z_GRIDS = 501
@@ -440,3 +440,102 @@ class bpzEstimator(zEstimator):
         if return_pdfs:
             points["pdfs"] = pdfs
         return points
+
+
+def shear_variant(comp: int, dg: float) -> str:
+    """Name the shear variant a ``(comp, dg)`` estimator call belongs to.
+
+    ``measure_shear`` evaluates the photo-z three times per component: once
+    unsheared for the nominal measurement, and once at each of +/-dg for the
+    selection response.  This is the single place that names them, so a cache
+    writer and a cache reader cannot disagree.
+
+    Returns ``"noshear"``, or e.g. ``"1p"``/``"1m"`` for component 1.
+    """
+    if dg == 0.0:
+        return "noshear"
+    return f"{int(comp)}{'p' if dg > 0 else 'm'}"
+
+
+class cachedEstimator(zEstimator):
+    """Serve precomputed point estimates instead of running a photo-z model.
+
+    The photo-z is a per-row function of the colors alone: the magnitude, |e|
+    and width cuts decide *which* rows are evaluated, never what value a row
+    gets.  So the estimates can be computed once for every row and reused
+    across any number of cut choices, which turns a model-inference-bound
+    sweep into an array-indexing one.
+
+    This is a drop-in for ``flexzboostEstimator``/``bpzEstimator``: it
+    implements the same ``get_z`` contract, so the inherited ``get_zsel`` --
+    and therefore ``measure_shear`` and ``ShearEstimator`` -- need no changes.
+
+    Parameters
+    ----------
+    table : np.ndarray
+        Structured array with one row per catalog row, holding columns named
+        ``f"{point}_{variant}"`` (e.g. ``zmode_noshear``, ``z025_1p``) for
+        every point estimate and every variant that will be requested.
+    id_column : str
+        Column of ``src`` holding each row's index into ``table``.  The
+        measurement passes masked subsets of ``src`` to the estimator, so the
+        catalog must carry this column for the rows to be identifiable; it
+        survives the masking and indexes straight back into ``table``.
+
+    Notes
+    -----
+    Store the cached values in **float64**.  A redshift grid often lands
+    exactly on the bin bounds used by ``np.digitize(..., right=False)``, which
+    tests equality; rounding to float32 can flip that test and silently move
+    galaxies into a neighbouring redshift bin.
+    """
+
+    def __init__(self, table: np.ndarray, *, id_column: str = "row_id",
+                 noshear_key: str = "noshear"):
+        if table.dtype.names is None:
+            raise TypeError("cachedEstimator needs a structured array")
+        self.table = table
+        self.id_column = id_column
+        # writers disagree on what to call the unsheared variant: this module's
+        # shear_variant() says "noshear", while xlens.processor.photoz writes
+        # "0".  Name it rather than guess.
+        self.noshear_key = noshear_key
+
+    def get_z(
+        self,
+        src: np.ndarray,
+        *,
+        comp: int = 1,
+        dg: float = 0.0,
+        **kwargs,
+    ) -> dict:
+        """Point estimates for the rows of ``src``, looked up by id_column.
+
+        Every keyword the real estimators take (mag_zero, flux_name, bands,
+        ...) is accepted and ignored: those shaped the cached values when they
+        were written, and are recorded alongside the cache rather than
+        re-applied here.
+        """
+        names = self.table.dtype.names
+        if src.dtype.names is None or self.id_column not in src.dtype.names:
+            raise KeyError(
+                f"cachedEstimator needs an {self.id_column!r} column on the "
+                "catalog to identify rows; add one when the catalog is read"
+            )
+        key = shear_variant(comp, dg)
+        if key == "noshear":
+            key = self.noshear_key
+        want = [n[: -(len(key) + 1)] for n in names if n.endswith(f"_{key}")]
+        if not want:
+            have = sorted({n.rsplit("_", 1)[-1] for n in names})
+            raise KeyError(
+                f"no cached columns for variant {key!r} (cache has {have}); "
+                "the cache was written for a different --comp/--dg"
+            )
+        idx = src[self.id_column]
+        if len(idx) and int(np.max(idx)) >= len(self.table):
+            raise IndexError(
+                f"{self.id_column} reaches {int(np.max(idx))} but the cache "
+                f"has {len(self.table)} rows -- cache and catalog disagree"
+            )
+        return {p: self.table[f"{p}_{key}"][idx] for p in want}

@@ -43,7 +43,7 @@ from lsst.pipe.base import (
 from lsst.utils.logging import LsstLogAdapter
 from numpy.typing import NDArray
 
-from ..catalog.redshift import flexzboostEstimator
+from ..utils.catalog.redshift import flexzboostEstimator
 
 POINT_KEYS = ("zmode", "z025", "z160", "z500", "z840", "z975", "zbest")
 

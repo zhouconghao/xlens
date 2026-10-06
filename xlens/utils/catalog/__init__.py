@@ -19,7 +19,7 @@
 # You should have received a copy of the GNU General Public License
 # along with this program.  If not, see <https://www.gnu.org/licenses/>.
 
-from . import model, redshift, utils
+from . import model, redshift, skymap, utils
 from .base import ShearEstimator, get_esq, measure_shear
 from .utils import (
     multiband_shapelets2ell,
@@ -27,6 +27,7 @@ from .utils import (
 
 __all__ = [
     "utils",
+    "skymap",
     "model",
     "get_esq",
     "measure_shear",

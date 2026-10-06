@@ -25,7 +25,6 @@ from .__version__ import __version__  # noqa
 
 _SUBMODULES = (
     "analysis",
-    "catalog",
     "process_pipe",
     "processor",
     "simulator",

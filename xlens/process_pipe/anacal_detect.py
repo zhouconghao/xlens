@@ -44,7 +44,7 @@ from ..processor.measure_base import (
     AnacalMeasureConfigBase,
     AnacalMeasureTaskBase,
 )
-from ..utils.catalog import set_isPrimary
+from ..utils.catalog.skymap import set_isPrimary
 
 
 class AnacalDetectPipeConnections(

@@ -21,7 +21,7 @@
 
 import numpy as np
 
-from ..utils.constants import MAG_ZERO_AB
+from ..constants import MAG_ZERO_AB
 
 s0 = 0.01  # ground for std
 

@@ -53,8 +53,8 @@ from lsst.pipe.base import PipelineTask
 from numpy.lib import recfunctions as rfn
 from numpy.typing import NDArray
 
-from ..catalog.utils import add_magnitude_columns
-from ..utils.catalog import set_isPrimary
+from ..utils.catalog.utils import add_magnitude_columns
+from ..utils.catalog.skymap import set_isPrimary
 from ..utils.columns import merge_structured, select_band_gauss_fluxes
 from ..utils.constants import MAG_ZERO_AB
 from ..utils.image import (

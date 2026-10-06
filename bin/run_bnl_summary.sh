@@ -4,7 +4,7 @@
 #   --min-id/--max-id) with chunk size --per-task (default: 10)
 # - Logs to ${HOME}/log
 # - Passes: --emax --layout --target --shear --width-max --z-bounds \
-#   --pixel-scale --bands --redshift
+#   --pixel-scale --stamp-dim --bands --redshift
 #   [--no-correction] --min-id --max-id
 
 set -euo pipefail
@@ -19,6 +19,7 @@ LAYOUT="random"             # --layout STR
 WIDTH_MAX="2.75"            # --width-max F
 Z_BOUNDS="0.3,0.6,0.9,1.2,1.5,1.8"   # --z-bounds STR
 PIXEL_SCALE="0.2"           # --pixel-scale F
+STAMP_DIM="1350"            # --stamp-dim N (usable image dim in pixels)
 BANDS="ugrizy"              # --bands STR
 REDSHIFT="flexzboost"       # --redshift STR
 VERSION=""                  # --version N (optional; empty = unversioned outputs)
@@ -45,6 +46,8 @@ Options:
   --width-max F         width maximum (default: ${WIDTH_MAX})
   --z-bounds STR        comma-separated redshift bounds (default: ${Z_BOUNDS})
   --pixel-scale F       pixel scale (arcsec/pixel, default: ${PIXEL_SCALE})
+  --stamp-dim N         usable image dimension in pixels, for the area/density
+                        calc (default: ${STAMP_DIM})
   --bands STR           bands used for photo-z estimation (default: ${BANDS})
   --redshift STR        photo-z estimator name (default: ${REDSHIFT})
   --version N           optional integer tag; injects --version N into the
@@ -79,6 +82,7 @@ while [[ $# -gt 0 ]]; do
     --width-max)     WIDTH_MAX="$2"; shift 2 ;;
     --z-bounds)      Z_BOUNDS="$2"; shift 2 ;;
     --pixel-scale)   PIXEL_SCALE="$2"; shift 2 ;;
+    --stamp-dim)     STAMP_DIM="$2"; shift 2 ;;
     --bands)         BANDS="$2"; shift 2 ;;
     --redshift)      REDSHIFT="$2"; shift 2 ;;
     --version)       VERSION="$2"; shift 2 ;;
@@ -144,6 +148,7 @@ arguments       = ${SCRIPT_PATH} \\
                   --width-max ${WIDTH_MAX} \\
                   --z-bounds ${Z_BOUNDS} \\
                   --pixel-scale ${PIXEL_SCALE} \\
+                  --stamp-dim ${STAMP_DIM} \\
                   --bands ${BANDS} \\
                   --redshift ${REDSHIFT} \\
                   ${VERSION:+--version ${VERSION}} \\

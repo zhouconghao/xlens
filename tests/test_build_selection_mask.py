@@ -1,4 +1,4 @@
-"""Unit tests for ``xlens.catalog.base.build_selection_mask``.
+"""Unit tests for ``xlens.utils.catalog.base.build_selection_mask``.
 
 The function was extracted from ``ShearEstimator._measure`` to expose
 the (mag, size, shape, optional photo-z) selection logic as a public
@@ -16,12 +16,12 @@ helper. These tests pin down:
 """
 import numpy as np
 
-from xlens.catalog.base import (
+from xlens.utils.catalog.base import (
     build_selection_mask,
     get_esq,
     get_trace,
 )
-from xlens.catalog.utils import _resolve_cut, _resolve_cut_name
+from xlens.utils.catalog.utils import _resolve_cut, _resolve_cut_name
 
 SN = "fpfs_"
 SHAPE = "fpfs"

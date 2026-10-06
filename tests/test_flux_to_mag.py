@@ -23,7 +23,7 @@
 
 import numpy as np
 
-from xlens.catalog.utils import (
+from xlens.utils.catalog.utils import (
     MAG_CAP,
     MAG_ERR_FAC,
     MAG_KNEE,

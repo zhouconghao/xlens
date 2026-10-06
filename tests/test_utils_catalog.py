@@ -7,7 +7,7 @@ import numpy as np
 from numpy.lib import recfunctions as rfn
 
 import xlens
-from xlens.catalog import ShearEstimator, measure_shear
+from xlens.utils.catalog import ShearEstimator, measure_shear
 
 # Survey-prefixed bands the pipeline now uses; the bundled
 # ``catalog.fits`` has single-letter per-band columns, so re-key them to
@@ -31,7 +31,7 @@ def test_pz_point_estimates():
     DATA_DIR = Path(__file__).parent / "data"
     pfname = os.path.join(DATA_DIR, "pz_pdfs_test.fits")
     pdfs = fitsio.read(pfname)
-    out = xlens.catalog.redshift.get_point_estimates_from_pdfs(pdfs)
+    out = xlens.utils.catalog.redshift.get_point_estimates_from_pdfs(pdfs)
     key_target = ['zmode', 'z025', 'z160', 'z500', 'z840', 'z975', 'zbest']
     assert list(out.keys()) == key_target
     zbest_target = np.array([4.28967696, 0.72257506, 1.52362052])
@@ -55,7 +55,7 @@ def test_pz():
     model_fname = os.path.join(DATA_DIR, "model_inform_fzboost.pkl")
     with open(model_fname, "rb") as f:
         pz_obj = pickle.load(f)
-    fzbobj = xlens.catalog.redshift.flexzboostEstimator(pz_obj)
+    fzbobj = xlens.utils.catalog.redshift.flexzboostEstimator(pz_obj)
     out = fzbobj.get_z(
         catalog,
         mag_zero=30.0,
@@ -85,7 +85,7 @@ def test_measure_shear_consistency():
     model_fname = os.path.join(DATA_DIR, "model_inform_fzboost.pkl")
     with open(model_fname, "rb") as f:
         pz_obj = pickle.load(f)
-    fzbobj = xlens.catalog.redshift.flexzboostEstimator(pz_obj)
+    fzbobj = xlens.utils.catalog.redshift.flexzboostEstimator(pz_obj)
 
     emax = 0.3
     zbounds = [0.3, 0.6, 0.9, 1.2]

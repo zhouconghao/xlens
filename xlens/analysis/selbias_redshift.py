@@ -30,6 +30,7 @@ from typing import Any, Iterable, List
 
 import lsst.pipe.base.connectionTypes as cT
 import numpy as np
+from numpy.lib import recfunctions as rfn
 from astropy.stats import sigma_clipped_stats
 from lsst.pex.config import DictField, Field, FieldValidationError, ListField
 from lsst.pipe.base import (
@@ -40,9 +41,10 @@ from lsst.pipe.base import (
 )
 from lsst.utils.logging import LsstLogAdapter
 
-from xlens.catalog import measure_shear
-from xlens.catalog.redshift import (
+from xlens.utils.catalog import measure_shear
+from xlens.utils.catalog.redshift import (
     bpzEstimator,
+    cachedEstimator,
     flexzboostEstimator,
     load_bpz_templates,
 )
@@ -149,6 +151,38 @@ class SelBiasRedshiftPipeConnections(
         minimum=0,
     )
 
+    pz00 = cT.Input(
+        doc="Cached photo-z point estimates for src00 (xlens.processor.photoz).",
+        name="{coaddName}_0_rot0_coadd_{dataType}_photoz",
+        dimensions=("skymap", "tract", "patch"),
+        storageClass="ArrowAstropy",
+        minimum=0,
+    )
+
+    pz01 = cT.Input(
+        doc="Cached photo-z point estimates for src01.",
+        name="{coaddName}_0_rot1_coadd_{dataType}_photoz",
+        dimensions=("skymap", "tract", "patch"),
+        storageClass="ArrowAstropy",
+        minimum=0,
+    )
+
+    pz10 = cT.Input(
+        doc="Cached photo-z point estimates for src10.",
+        name="{coaddName}_1_rot0_coadd_{dataType}_photoz",
+        dimensions=("skymap", "tract", "patch"),
+        storageClass="ArrowAstropy",
+        minimum=0,
+    )
+
+    pz11 = cT.Input(
+        doc="Cached photo-z point estimates for src11.",
+        name="{coaddName}_1_rot1_coadd_{dataType}_photoz",
+        dimensions=("skymap", "tract", "patch"),
+        storageClass="ArrowAstropy",
+        minimum=0,
+    )
+
     summary = cT.Output(
         doc="Summary statistics per redshift bin.",
         name="{coaddName}_coadd_anacal_selbias_redshift_{dataType}{version}",
@@ -158,6 +192,9 @@ class SelBiasRedshiftPipeConnections(
 
     def __init__(self, *, config=None):
         super().__init__(config=config)
+        if config is not None and config.redshift_estimator != "cached":
+            for name in ("pz00", "pz01", "pz10", "pz11"):
+                self.inputs.remove(name)
 
 
 class SelBiasRedshiftPipeConfig(
@@ -209,8 +246,29 @@ class SelBiasRedshiftPipeConfig(
         default="lsst_i",
     )
     redshift_estimator = Field[str](
-        doc="Photometric redshift estimator to use (flexzboost/bpz).",
+        doc=(
+            "Photometric redshift estimator: 'flexzboost' or 'bpz' to run the "
+            "model here, or 'cached' to read point estimates precomputed by "
+            "xlens.processor.photoz.  'cached' needs the pz* inputs and is "
+            "~30x faster, but is only valid if the cache was written with the "
+            "same bands/flux_name/model AND the same dg as this task uses."
+        ),
         default="flexzboost",
+    )
+    cached_noshear_key = Field[str](
+        doc=(
+            "Suffix the cache uses for the undistorted variant. "
+            "xlens.processor.photoz writes '0'."
+        ),
+        default="0",
+    )
+    cached_dg = Field[float](
+        doc=(
+            "The dg the cache was written with; must equal this task's dg, "
+            "otherwise the selection response would be differenced over a "
+            "different step than the cache was built for."
+        ),
+        default=0.01,
     )
     model_path = Field[str](
         doc="Path to the serialized photometric redshift estimator.",
@@ -228,6 +286,13 @@ class SelBiasRedshiftPipeConfig(
 
     def validate(self):
         super().validate()
+        if self.redshift_estimator == "cached" and self.cached_dg != self.dg:
+            raise ValueError(
+                f"cached_dg ({self.cached_dg}) != dg ({self.dg}); the cached "
+                "1p/1m estimates were computed at a different shear step, so "
+                "the selection response would be wrong.  Rebuild the photo-z "
+                "cache at dg or set dg to match it."
+            )
         if len(self.connections.dataType) == 0:
             raise ValueError("connections.dataType missing")
 
@@ -274,6 +339,9 @@ class SelBiasRedshiftPipe(PipelineTask):
     def _init_z_estimator(self):
         assert isinstance(self.config, SelBiasRedshiftPipeConfig)
         config = self.config
+        if config.redshift_estimator == "cached":
+            # built per catalog in run(), since each one has its own rows
+            return None
         if config.model_path:
             model_path = config.model_path
         else:
@@ -307,12 +375,51 @@ class SelBiasRedshiftPipe(PipelineTask):
         outputs = self.run(**inputs)
         butlerQC.put(outputs, outputRefs)
 
-    def _measure_catalog(self, src) -> tuple[np.ndarray, np.ndarray]:
+    @staticmethod
+    def _to_array(cat):
+        """Butler hands back an astropy Table; measure_shear wants an array."""
+        if cat is None:
+            return None
+        return cat.as_array() if hasattr(cat, "as_array") else np.asarray(cat)
+
+    def _with_row_id(self, src: np.ndarray) -> np.ndarray:
+        """Append a row_id column so cachedEstimator can identify masked rows.
+
+        measure_shear passes *subsets* of src to the estimator, so position in
+        the original catalog is otherwise lost.  The cache is row-aligned with
+        the catalog by construction (both come from the same measurement), so
+        the row number is the key.
+        """
+        if src.dtype.names is not None and "row_id" in src.dtype.names:
+            return src
+        return rfn.append_fields(
+            src, "row_id", np.arange(len(src), dtype=np.int64),
+            usemask=False, asrecarray=False,
+        )
+
+    def _cached_estimator(self, pz, n_src: int, label: str):
+        assert isinstance(self.config, SelBiasRedshiftPipeConfig)
+        if pz is None:
+            raise RuntimeError(
+                f"redshift_estimator='cached' but input {label} is missing; "
+                "run xlens.processor.photoz first or switch the estimator"
+            )
+        tab = self._to_array(pz)
+        if len(tab) != n_src:
+            raise RuntimeError(
+                f"{label} has {len(tab)} rows but its catalog has {n_src}; "
+                "the photo-z cache is not aligned with this catalog"
+            )
+        return cachedEstimator(
+            tab, noshear_key=self.config.cached_noshear_key
+        )
+
+    def _measure_catalog(self, src, z_estimator=None) -> tuple[np.ndarray, np.ndarray]:
         assert isinstance(self.config, SelBiasRedshiftPipeConfig)
         config = self.config
         out = measure_shear(
             src=src,
-            z_estimator=self._z_estimator,
+            z_estimator=self._z_estimator if z_estimator is None else z_estimator,
             zbounds=self._zbounds,
             flux_min=config.flux_min,
             emax=config.emax,
@@ -329,20 +436,32 @@ class SelBiasRedshiftPipe(PipelineTask):
         resp_sel = np.asarray(out["r_sel"], dtype=np.float64)
         return ell, resp + resp_sel
 
-    def _accumulate_pair(self, catalogs: Iterable[np.ndarray | None]) -> tuple[np.ndarray, np.ndarray]:
+    def _accumulate_pair(self, entries) -> tuple[np.ndarray, np.ndarray]:
+        assert isinstance(self.config, SelBiasRedshiftPipeConfig)
+        cached = self.config.redshift_estimator == "cached"
         e_total = np.zeros(self._ncut, dtype=np.float64)
         r_total = np.zeros(self._ncut, dtype=np.float64)
-        for src in catalogs:
+        for src, pz, label in entries:
             if src is None:
                 continue
-            ell, resp = self._measure_catalog(src)
+            src = self._to_array(src)
+            est = None
+            if cached:
+                src = self._with_row_id(src)
+                est = self._cached_estimator(pz, len(src), label)
+            ell, resp = self._measure_catalog(src, est)
             e_total += ell
             r_total += resp
         return e_total, r_total
 
-    def run(self, *, src00, src10, src01=None, src11=None, **kwargs):
-        e_neg, r_neg = self._accumulate_pair([src00, src01])
-        e_pos, r_pos = self._accumulate_pair([src10, src11])
+    def run(self, *, src00, src10, src01=None, src11=None,
+            pz00=None, pz10=None, pz01=None, pz11=None, **kwargs):
+        e_neg, r_neg = self._accumulate_pair(
+            [(src00, pz00, "pz00"), (src01, pz01, "pz01")]
+        )
+        e_pos, r_pos = self._accumulate_pair(
+            [(src10, pz10, "pz10"), (src11, pz11, "pz11")]
+        )
 
         data_type = [
             ("e_pos", "f8"),
@@ -407,6 +526,13 @@ class SelBiasRedshiftSummaryPipeConfig(
 
     def validate(self):
         super().validate()
+        if self.redshift_estimator == "cached" and self.cached_dg != self.dg:
+            raise ValueError(
+                f"cached_dg ({self.cached_dg}) != dg ({self.dg}); the cached "
+                "1p/1m estimates were computed at a different shear step, so "
+                "the selection response would be wrong.  Rebuild the photo-z "
+                "cache at dg or set dg to match it."
+            )
         if len(self.connections.dataType) == 0:
             raise ValueError("connections.dataType missing")
 

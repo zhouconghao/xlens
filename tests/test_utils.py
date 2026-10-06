@@ -4,7 +4,7 @@ from lsst.afw.image import ExposureF
 from lsst.geom import Box2I, Extent2I, Point2I
 from lsst.meas.base import SkyMapIdGeneratorConfig
 
-from xlens.utils.catalog import rotate_ra_dec
+from xlens.utils.catalog.skymap import rotate_ra_dec
 from xlens.utils.handle import make_data_id
 from xlens.utils.image import (
     _stack_bands,

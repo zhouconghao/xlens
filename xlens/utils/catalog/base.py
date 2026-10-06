@@ -22,7 +22,7 @@
 import numpy as np
 
 # from .model import w_model, w_model_derivs
-from ..utils.constants import MAG_ZERO_AB
+from ..constants import MAG_ZERO_AB
 from .utils import _resolve_cut, _resolve_cut_name, flux_to_mag
 
 

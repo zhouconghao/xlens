@@ -11,8 +11,8 @@ import fitsio
 import numpy as np
 from astropy.stats import sigma_clipped_stats
 
-from xlens.catalog import ShearEstimator
-from xlens.catalog.redshift import (
+from xlens.utils.catalog import ShearEstimator
+from xlens.utils.catalog.redshift import (
     bpzEstimator,
     flexzboostEstimator,
     load_bpz_templates,
